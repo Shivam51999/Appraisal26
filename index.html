@@ -116,6 +116,8 @@
   .tier-Not{background:#ECE6DC;color:#867A6D;}
   .flag-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--alert);margin-left:6px;}
   .promo-badge{background:var(--gold-soft);color:var(--gold-deep);font-size:10.5px;padding:2px 7px;border-radius:20px;font-weight:600;}
+  .grade-pill{background:var(--violet-soft);color:var(--violet);font-size:10px;padding:1px 7px;border-radius:20px;font-weight:600;margin-left:6px;white-space:nowrap;}
+  .desig-arrow{color:var(--ink-soft);font-size:11px;}
 
   .overlay{position:fixed;inset:0;background:rgba(42,25,20,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
   .overlay.open{display:flex;}
@@ -170,7 +172,7 @@
     <span id="syncStatus"></span>
   </div>
   <div class="linkline" style="margin-top:6px;"><a id="sheetLink" href="#" target="_blank" rel="noopener">View live data feed (CSV) →</a></div>
-  <div class="help">Connected via a published Google Sheets CSV feed (Employee Detail tab, File → Share → Publish to web). With "Republish automatically when changes are made" turned on in that dialog, edits in the sheet appear here on the next refresh. Auto-refreshes every 60 seconds while this page stays open.</div>
+  <div class="help">Connected via a published Google Sheets CSV feed (Employee Detail tab, File → Share → Publish to web). With "Republish automatically when changes are made" turned on in that dialog, edits in the sheet are picked up whenever you press "Refresh now" below.</div>
 </header>
 
 <div class="kpi-wrap">
@@ -252,6 +254,7 @@
       <input type="text" id="searchInput" placeholder="Search by name, employee ID, designation or department…">
       <select id="deptFilter"><option value="">All Departments</option></select>
       <select id="tierFilter"><option value="">All Tiers</option></select>
+      <select id="gradeFilter"><option value="">All Grades</option></select>
       <select id="flagFilter">
         <option value="">All Employees</option>
         <option value="promo">Promoted</option>
@@ -397,7 +400,6 @@ function computeAll(employees){
 
 let DATA = computeAll(EMBEDDED_EMPLOYEES);
 let deptChart=null, incrChart=null, projChart=null;
-let autoRefreshTimer = null;
 
 /* ============ KPI STRIP ============ */
 function renderKPIs(){
@@ -593,6 +595,11 @@ function populateFilters(){
   tierSel.innerHTML = '<option value="">All Tiers</option>';
   const tiers = [...new Set(DATA.employees.map(e=>e.tier))].sort();
   tiers.forEach(t=> tierSel.innerHTML += `<option value="${t}">${t}</option>`);
+
+  const gradeSel = document.getElementById('gradeFilter');
+  const grades = [...new Set(DATA.employees.map(e=>e.grade).filter(Boolean))].sort();
+  gradeSel.style.display = grades.length ? '' : 'none';
+  gradeSel.innerHTML = '<option value="">All Grades</option>' + grades.map(g=>`<option value="${g}">${g}</option>`).join('');
 }
 
 function matchesFlag(e, flag){
@@ -610,13 +617,15 @@ function renderTable(){
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const dept = document.getElementById('deptFilter').value;
   const tier = document.getElementById('tierFilter').value;
+  const grade = document.getElementById('gradeFilter').value;
   const flag = document.getElementById('flagFilter').value;
 
   const rows = DATA.employees.filter(e=>{
-    const hay = (e.name+' '+e.id+' '+e.desig+' '+e.dept).toLowerCase();
+    const hay = (e.name+' '+e.id+' '+e.desig+' '+(e.newDesig||'')+' '+(e.desigKRA||'')+' '+e.dept).toLowerCase();
     if (q && !hay.includes(q)) return false;
     if (dept && e.dept !== dept) return false;
     if (tier && e.tier !== tier) return false;
+    if (grade && e.grade !== grade) return false;
     if (!matchesFlag(e, flag)) return false;
     return true;
   });
@@ -628,7 +637,7 @@ function renderTable(){
     <tr data-idx="${DATA.employees.indexOf(e)}">
       <td><b>${e.name}</b> <span class="mono" style="color:#999;font-size:11px;">${e.id}</span> ${e.promo?'<span class="promo-badge">Promoted</span>':''}</td>
       <td>${e.dept}</td>
-      <td>${e.desig}</td>
+      <td>${e.desig}${e.newDesig && e.newDesig!==e.desig ? ` <span class="desig-arrow">→ ${e.newDesig}</span>` : ''}${e.grade?`<span class="grade-pill">${e.grade}</span>`:''}</td>
       <td class="mono">${fmtINR(e.current)}</td>
       <td class="mono">${fmtINR(e.reco)}</td>
       <td class="mono">${e.incrPct}%</td>
@@ -656,6 +665,9 @@ function openDrawer(e){
     <h3>${e.name}</h3>
     <div class="desig">${e.desig} · ${e.dept} · ${e.id}</div>
     <div class="row"><span>Performance Tier</span><span><span class="tier-pill ${tierClass(e.tier)}">${e.tier}</span></span></div>
+    ${e.desigKRA ? `<div class="row"><span>Designation in KRA</span><span>${e.desigKRA}</span></div>` : ''}
+    ${e.newDesig ? `<div class="row"><span>New Designation</span><span>${e.newDesig}</span></div>` : ''}
+    ${e.grade ? `<div class="row"><span>Grade</span><span>${e.grade}</span></div>` : ''}
     <div class="row"><span>Current CTC</span><span>${fmtINR(e.current)}</span></div>
     <div class="row"><span>Recommended CTC</span><span>${fmtINR(e.reco)}</span></div>
     <div class="row"><span>Increment</span><span>${fmtINR(e.incrAmt)} (${e.incrPct}%)</span></div>
@@ -708,12 +720,18 @@ function rowsToEmployees(header, rows){
     const salCorrVal = ('Salary Correction Flag' in idx) ? row[idx['Salary Correction Flag']] : null;
     const empIdVal = ('Emp ID' in idx) ? row[idx['Emp ID']] : '';
     const tenureVal = ('Mangalam Tenure (yrs)' in idx) ? toNum(row[idx['Mangalam Tenure (yrs)']]) : 0;
+    const desigKraVal = ('Designation in KRA' in idx) ? row[idx['Designation in KRA']] : '';
+    const newDesigVal = ('New Designation' in idx) ? row[idx['New Designation']] : '';
+    const gradeVal = ('Grade' in idx) ? row[idx['Grade']] : '';
 
     out.push({
       dept: (''+dept).trim(),
       name: (''+name).trim(),
       id: empIdVal ? (''+empIdVal).trim() : '',
       desig: idx['Designation']!==undefined ? (''+(row[idx['Designation']]||'')).trim() : '',
+      desigKRA: desigKraVal ? (''+desigKraVal).trim() : '',
+      newDesig: newDesigVal ? (''+newDesigVal).trim() : '',
+      grade: gradeVal ? (''+gradeVal).trim() : '',
       tenure: tenureVal,
       current: Math.round(current),
       reco: Math.round(reco),
@@ -851,9 +869,9 @@ document.getElementById('fileInput').addEventListener('change', function(evt){
 renderAll(); // paint immediately with embedded snapshot
 fetchFromGoogleSheet(false); // then try to sync live
 fetchChangeLog(); // and load the recent-changes panel
-autoRefreshTimer = setInterval(()=> { fetchFromGoogleSheet(false); fetchChangeLog(); }, 60000);
+// No auto-refresh timer — use the "Refresh now" button to pull the latest data on demand.
 
-['searchInput','deptFilter','tierFilter','flagFilter'].forEach(id=>{
+['searchInput','deptFilter','tierFilter','gradeFilter','flagFilter'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderTable);
   document.getElementById(id).addEventListener('change', renderTable);
 });
