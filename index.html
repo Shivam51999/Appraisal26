@@ -288,8 +288,8 @@
 const EMBEDDED_EMPLOYEES = JSON.parse(document.getElementById('raw-employees').textContent);
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQNNyWvHG4uLYk3YFzVz3IJ1cNmrRy2DHCVDYtmsq3yrMT1xzvX61YOkZ0TujmyGg0eY-jtz2glphZU/pub?gid=44539329&single=true&output=csv';
 const SHEET_TAB_NAME = 'Employee Detail';
-/* PASTE THE PUBLISHED CSV LINK FOR THE "Change Log" TAB HERE (File → Share → Publish to web → select the Change Log tab → CSV). Leave as-is until that tab exists. */
-const CHANGELOG_CSV_URL = 'PASTE_CHANGELOG_TAB_PUBLISHED_CSV_LINK_HERE';
+/* Web app URL from Deploy -> New deployment -> Web app in the Change Log Apps Script project. */
+const CHANGELOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzfp0H2WVArYBe3_si7Ib94wGHS3FCzFtE80juWCNSDGZSWRRegs5wk_IeA1zUsB8q0/exec';
 const CHANGELOG_WINDOW_DAYS = 15;
 </script>
 <script>
@@ -781,31 +781,29 @@ function renderChangeLogMsg(msg){
   document.getElementById('changeLogBody').innerHTML = `<div class="cl-empty">${msg}</div>`;
 }
 function fetchChangeLog(){
-  if (!CHANGELOG_CSV_URL || CHANGELOG_CSV_URL.indexOf('PASTE_') === 0){
-    renderChangeLogMsg('Change log not connected yet. Publish the "Change Log" tab to web as CSV and paste the link into CHANGELOG_CSV_URL near the top of this file.');
+  if (!CHANGELOG_WEBAPP_URL || CHANGELOG_WEBAPP_URL.indexOf('PASTE_') === 0){
+    renderChangeLogMsg('Change log not connected yet. Deploy the Apps Script as a web app and paste its /exec URL into CHANGELOG_WEBAPP_URL near the top of this file.');
     return;
   }
-  const url = CHANGELOG_CSV_URL + (CHANGELOG_CSV_URL.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  const url = CHANGELOG_WEBAPP_URL + (CHANGELOG_WEBAPP_URL.includes('?') ? '&' : '?') + 'action=getChangeLog&_ts=' + Date.now();
   fetch(url, {cache:'no-store'})
     .then(res=>{
       if(!res.ok) throw new Error('HTTP '+res.status);
-      return res.text();
+      return res.json();
     })
-    .then(csv=>{
-      const parsed = Papa.parse(csv.trim(), {skipEmptyLines:true});
-      const rows = parsed.data;
+    .then(res=>{
+      if (!res || res.success !== true) throw new Error((res && res.error) || 'Unexpected response');
+      const rows = res.data || [];
       if (!rows.length){ renderChangeLogMsg('No changes logged yet.'); return; }
-      const header = rows[0];
-      const idx = {};
-      header.forEach((h,i)=>{ const key=(h||'').toString().trim(); if(key && !(key in idx)) idx[key]=i; });
+
       const cutoff = Date.now() - CHANGELOG_WINDOW_DAYS*24*60*60*1000;
-      const entries = rows.slice(1).map(r=>({
-        dateObj: new Date(r[idx['Timestamp']]),
-        editor: (r[idx['Editor Email']]||'').toString().trim(),
-        employee: (r[idx['Employee']]||'').toString().trim(),
-        field: (r[idx['Field']]||'').toString().trim(),
-        oldV: (r[idx['Old Value']]||'').toString().trim(),
-        newV: (r[idx['New Value']]||'').toString().trim(),
+      const entries = rows.map(r=>({
+        dateObj: new Date(r['Timestamp']),
+        editor: (r['Editor Email']||'').toString().trim(),
+        employee: (r['Employee']||'').toString().trim(),
+        field: (r['Field']||'').toString().trim(),
+        oldV: (r['Old Value']||'').toString().trim(),
+        newV: (r['New Value']||'').toString().trim(),
       })).filter(e => !isNaN(e.dateObj.getTime()) && e.dateObj.getTime() >= cutoff)
         .sort((a,b)=> b.dateObj - a.dateObj);
 
