@@ -55,6 +55,11 @@
   .help{font-size:11px;color:#D9C3BE;max-width:960px;margin-top:2px;position:relative;z-index:1;}
 
   .kpi-wrap{padding:0 48px;margin-top:-24px;position:relative;z-index:2;}
+  .kpi-toggle-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .kpi-toggle-label{font-size:11px;color:var(--ink-soft);font-weight:600;background:var(--paper);padding:6px 12px;border-radius:20px;border:1px solid var(--line);box-shadow:0 4px 10px rgba(122,22,32,.06);}
+  .toggle-switch{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:2px;box-shadow:0 4px 10px rgba(122,22,32,.06);}
+  .toggle-opt{border:none;background:none;padding:5px 13px;border-radius:16px;font-size:11.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:'DM Sans',sans-serif;}
+  .toggle-opt.active{background:var(--maroon);color:#fff;}
   .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;}
   .kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:0 6px 18px rgba(122,22,32,.08);border-top:3px solid var(--maroon);}
   .kpi .lbl2{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:600;margin-bottom:8px;}
@@ -117,6 +122,7 @@
   .flag-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--alert);margin-left:6px;}
   .promo-badge{background:var(--gold-soft);color:var(--gold-deep);font-size:10.5px;padding:2px 7px;border-radius:20px;font-weight:600;}
   .grade-pill{background:var(--violet-soft);color:var(--violet);font-size:10px;padding:1px 7px;border-radius:20px;font-weight:600;margin-left:6px;white-space:nowrap;}
+  .desig-arrow{color:var(--gold-deep);font-size:11px;font-weight:600;}
 
   .overlay{position:fixed;inset:0;background:rgba(42,25,20,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
   .overlay.open{display:flex;}
@@ -175,6 +181,13 @@
 </header>
 
 <div class="kpi-wrap">
+  <div class="kpi-toggle-row">
+    <span class="kpi-toggle-label">Increment figures based on:</span>
+    <div class="toggle-switch" id="eligibleToggle">
+      <button type="button" class="toggle-opt active" data-mode="all">All Employees</button>
+      <button type="button" class="toggle-opt" data-mode="eligible">Eligible Only</button>
+    </div>
+  </div>
   <div class="kpis" id="kpiStrip"></div>
 </div>
 
@@ -195,7 +208,7 @@
         <canvas id="deptCtcChart" height="260"></canvas>
       </div>
       <div class="card">
-        <h3>Increment % — by Department</h3>
+        <h3>Increment % — by Department <span id="incrScopeTag" class="mono" style="text-transform:none;letter-spacing:0;color:var(--ink-soft);font-weight:500;"></span></h3>
         <canvas id="deptIncrChart" height="260"></canvas>
       </div>
     </div>
@@ -324,10 +337,17 @@ function computeAll(employees){
   const totalCurrent = employees.reduce((s,e)=>s+e.current,0);
   const totalReco = employees.reduce((s,e)=>s+e.reco,0);
   const totalIncrAmt = totalReco - totalCurrent;
+  const eligibleEmployees = employees.filter(e=> e.eligible !== false);
+  const eligCurrent = eligibleEmployees.reduce((s,e)=>s+e.current,0);
+  const eligReco = eligibleEmployees.reduce((s,e)=>s+e.reco,0);
   const overall = {
     totalEmployees: employees.length,
     totalCurrent, totalReco, totalIncrAmt,
     overallIncrPct: totalCurrent ? Math.round((totalReco-totalCurrent)/totalCurrent*10000)/100 : 0,
+    eligibleCount: eligibleEmployees.length,
+    eligibleCurrent: eligCurrent, eligibleReco: eligReco,
+    totalIncrAmtEligible: eligReco - eligCurrent,
+    overallIncrPctEligible: eligCurrent ? Math.round((eligReco-eligCurrent)/eligCurrent*10000)/100 : 0,
     promotions: employees.filter(e=>e.promo).length,
     departments: new Set(employees.map(e=>e.dept)).size,
     dataInsufficient: employees.filter(e=>e.dataSuff!=='Yes').length,
@@ -339,16 +359,19 @@ function computeAll(employees){
 
   const deptMap = {};
   employees.forEach(e=>{
-    if(!deptMap[e.dept]) deptMap[e.dept] = {Department:e.dept, employees:0, current:0, reco:0, promotions:0, incrList:[]};
+    if(!deptMap[e.dept]) deptMap[e.dept] = {Department:e.dept, employees:0, current:0, reco:0, promotions:0, incrList:[], eligCurrent:0, eligReco:0, eligCount:0};
     const g = deptMap[e.dept];
     g.employees++; g.current += e.current; g.reco += e.reco;
     if(e.promo) g.promotions++;
     g.incrList.push(e.incrPct);
+    if(e.eligible !== false){ g.eligCurrent += e.current; g.eligReco += e.reco; g.eligCount++; }
   });
   const departments = Object.values(deptMap).map(g=>({
     Department:g.Department, employees:g.employees, current:g.current, reco:g.reco, promotions:g.promotions,
     incrPct: g.current ? Math.round((g.reco-g.current)/g.current*10000)/100 : 0,
     avgIncrPct: Math.round((g.incrList.reduce((a,b)=>a+b,0)/g.incrList.length)*100)/100,
+    eligCount:g.eligCount,
+    incrPctEligible: g.eligCurrent ? Math.round((g.eligReco-g.eligCurrent)/g.eligCurrent*10000)/100 : 0,
   }));
 
   const postMap = {};
@@ -399,15 +422,22 @@ function computeAll(employees){
 
 let DATA = computeAll(EMBEDDED_EMPLOYEES);
 let deptChart=null, incrChart=null, projChart=null;
+let incrementScope = 'all'; // 'all' | 'eligible'
 
 /* ============ KPI STRIP ============ */
 function renderKPIs(){
   const o = DATA.overall;
+  const useElig = incrementScope === 'eligible';
+  const incrPct = useElig ? o.overallIncrPctEligible : o.overallIncrPct;
+  const incrAmt = useElig ? o.totalIncrAmtEligible : o.totalIncrAmt;
+  const incrCtx = useElig
+    ? `${o.eligibleCount} of ${o.totalEmployees} eligible · ${fmtINRShort(incrAmt)} added to payroll`
+    : fmtINRShort(incrAmt)+' added to payroll';
   const kpis = [
     {lbl:'Total Employees', val:o.totalEmployees, ctx:`${o.departments} departments`},
     {lbl:'Current CTC (Total)', val:fmtINRShort(o.totalCurrent), ctx:'Annualized, org-wide'},
     {lbl:'Recommended CTC (Total)', val:fmtINRShort(o.totalReco), ctx:'Post-appraisal', accent:true},
-    {lbl:'Overall Increment', val:o.overallIncrPct+'%', ctx:fmtINRShort(o.totalIncrAmt)+' added to payroll', accent:true},
+    {lbl:'Overall Increment'+(useElig?' (Eligible)':''), val:incrPct+'%', ctx:incrCtx, accent:true},
     {lbl:'Promotions', val:o.promotions, ctx:(Math.round(o.promotions/o.totalEmployees*1000)/10)+'% of headcount'},
     {lbl:'Flagged for Review', val:o.salaryCorrectionFlagged + o.selfAskFlagged, ctx:o.dataInsufficient+' missing KRA/360 data', warn:true},
   ];
@@ -445,15 +475,19 @@ function renderCharts(){
     }
   });
 
-  const depts2 = [...DATA.departments].sort((a,b)=>b.incrPct-a.incrPct);
+  const useElig = incrementScope === 'eligible';
+  document.getElementById('incrScopeTag').textContent = useElig ? '(Eligible only)' : '';
+  const incrValOf = d => useElig ? d.incrPctEligible : d.incrPct;
+  const overallForCompare = useElig ? DATA.overall.overallIncrPctEligible : DATA.overall.overallIncrPct;
+  const depts2 = [...DATA.departments].sort((a,b)=>incrValOf(b)-incrValOf(a));
   incrChart = new Chart(document.getElementById('deptIncrChart'), {
     type:'bar',
     data:{
       labels: depts2.map(d=>d.Department),
       datasets:[{
-        label:'Increment %',
-        data: depts2.map(d=>d.incrPct),
-        backgroundColor: depts2.map(d=> d.incrPct > DATA.overall.overallIncrPct ? '#B8432E' : '#3F6B54'),
+        label: useElig ? 'Increment % (Eligible)' : 'Increment %',
+        data: depts2.map(d=>incrValOf(d)),
+        backgroundColor: depts2.map(d=> incrValOf(d) > overallForCompare ? '#B8432E' : '#3F6B54'),
         borderRadius:3
       }]
     },
@@ -620,7 +654,7 @@ function renderTable(){
   const flag = document.getElementById('flagFilter').value;
 
   const rows = DATA.employees.filter(e=>{
-    const hay = (e.name+' '+e.id+' '+e.desig+' '+(e.existingDesig||'')+' '+(e.desigKeka||'')+' '+e.dept).toLowerCase();
+    const hay = (e.name+' '+e.id+' '+e.desig+' '+(e.existingDesig||'')+' '+(e.promotedDesig||'')+' '+(e.desigKeka||'')+' '+e.dept).toLowerCase();
     if (q && !hay.includes(q)) return false;
     if (dept && e.dept !== dept) return false;
     if (tier && e.tier !== tier) return false;
@@ -636,7 +670,7 @@ function renderTable(){
     <tr data-idx="${DATA.employees.indexOf(e)}">
       <td><b>${e.name}</b> <span class="mono" style="color:#999;font-size:11px;">${e.id}</span> ${e.promo?'<span class="promo-badge">Promoted</span>':''}</td>
       <td>${e.dept}</td>
-      <td>${e.desig}${e.grade?`<span class="grade-pill">${e.grade}</span>`:''}</td>
+      <td>${e.promo && e.existingDesig && e.promotedDesig ? `${e.existingDesig} <span class="desig-arrow">→ ${e.promotedDesig}</span>` : e.desig}${e.grade?`<span class="grade-pill">${e.grade}</span>`:''}</td>
       <td class="mono">${fmtINR(e.current)}</td>
       <td class="mono">${fmtINR(e.reco)}</td>
       <td class="mono">${e.incrPct}%</td>
@@ -666,6 +700,7 @@ function openDrawer(e){
     <div class="row"><span>Performance Tier</span><span><span class="tier-pill ${tierClass(e.tier)}">${e.tier}</span></span></div>
     ${e.desigKeka ? `<div class="row"><span>Designation for Keka</span><span>${e.desigKeka}</span></div>` : ''}
     ${e.existingDesig ? `<div class="row"><span>Existing Designation</span><span>${e.existingDesig}</span></div>` : ''}
+    ${e.promotedDesig ? `<div class="row"><span>Promoted Designation</span><span>${e.promotedDesig}</span></div>` : ''}
     ${e.grade ? `<div class="row"><span>Grade</span><span>${e.grade}</span></div>` : ''}
     <div class="row"><span>Current CTC</span><span>${fmtINR(e.current)}</span></div>
     <div class="row"><span>Recommended CTC</span><span>${fmtINR(e.reco)}</span></div>
@@ -692,6 +727,24 @@ function renderAll(){
 }
 
 /* ============ SHARED ROW -> EMPLOYEE MAPPER ============ */
+function colLetterToIndex(letter){
+  let n = 0;
+  for (let i=0;i<letter.length;i++) n = n*26 + (letter.charCodeAt(i) - 64);
+  return n - 1; // zero-based
+}
+// Resolve a column by its known letter position; fall back to a keyword match in the
+// header text if that letter's header looks empty (e.g. sheet layout shifted).
+function resolveCol(header, letter, keywords){
+  const li = colLetterToIndex(letter);
+  if (li < header.length && (header[li]||'').toString().trim()) return li;
+  for (let i=0;i<header.length;i++){
+    const h = (header[i]||'').toString().toLowerCase();
+    if (keywords.some(k=>h.includes(k))) return i;
+  }
+  return -1;
+}
+const ELIGIBLE_YES = ['yes','y','true','1','eligible'];
+
 function rowsToEmployees(header, rows){
   const idx = {};
   header.forEach((h,i)=>{ const key=(h||'').toString().trim(); if(key && !(key in idx)) idx[key]=i; });
@@ -699,6 +752,11 @@ function rowsToEmployees(header, rows){
   const required = ['Department','Name','Designation','Current CTC','Recommended New CTC'];
   const missing = required.filter(c=>!(c in idx));
   if (missing.length) throw new Error('Missing expected column(s): '+missing.join(', '));
+
+  // Column S = Promoted Designation, Column U = Existing Designation, Column V = Increment Eligibility.
+  const colPromotedDesig = resolveCol(header, 'S', ['promoted designation','promoted']);
+  const colExistingDesig = resolveCol(header, 'U', ['existing designation','existing']);
+  const colEligible = resolveCol(header, 'V', ['eligib']);
 
   const out = [];
   for (let r = 0; r < rows.length; r++){
@@ -720,8 +778,12 @@ function rowsToEmployees(header, rows){
     const empIdVal = ('Emp ID' in idx) ? row[idx['Emp ID']] : '';
     const tenureVal = ('Mangalam Tenure (yrs)' in idx) ? toNum(row[idx['Mangalam Tenure (yrs)']]) : 0;
     const desigKekaVal = ('Designation for Keka' in idx) ? row[idx['Designation for Keka']] : '';
-    const existingDesigVal = ('Existing Designations' in idx) ? row[idx['Existing Designations']] : '';
+    const existingDesigVal = colExistingDesig>=0 ? row[colExistingDesig] : '';
+    const promotedDesigVal = colPromotedDesig>=0 ? row[colPromotedDesig] : '';
     const gradeVal = ('Grade' in idx) ? row[idx['Grade']] : '';
+    // No eligibility column found at all -> treat everyone as eligible (data not migrated yet).
+    // Column found -> explicit value decides; blank/unrecognized counts as not eligible.
+    const eligibleVal = colEligible < 0 ? true : ELIGIBLE_YES.includes((row[colEligible]||'').toString().trim().toLowerCase());
 
     out.push({
       dept: (''+dept).trim(),
@@ -730,7 +792,9 @@ function rowsToEmployees(header, rows){
       desig: idx['Designation']!==undefined ? (''+(row[idx['Designation']]||'')).trim() : '',
       desigKeka: desigKekaVal ? (''+desigKekaVal).trim() : '',
       existingDesig: existingDesigVal ? (''+existingDesigVal).trim() : '',
+      promotedDesig: promotedDesigVal ? (''+promotedDesigVal).trim() : '',
       grade: gradeVal ? (''+gradeVal).trim() : '',
+      eligible: eligibleVal,
       tenure: tenureVal,
       current: Math.round(current),
       reco: Math.round(reco),
@@ -865,6 +929,14 @@ document.getElementById('fileInput').addEventListener('change', function(evt){
 });
 
 /* ============ INIT ============ */
+document.querySelectorAll('#eligibleToggle .toggle-opt').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    incrementScope = btn.dataset.mode;
+    document.querySelectorAll('#eligibleToggle .toggle-opt').forEach(b=>b.classList.toggle('active', b===btn));
+    renderKPIs();
+    renderCharts();
+  });
+});
 renderAll(); // paint immediately with embedded snapshot
 fetchFromGoogleSheet(false); // then try to sync live
 fetchChangeLog(); // and load the recent-changes panel
