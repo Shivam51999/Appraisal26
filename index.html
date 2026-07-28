@@ -727,18 +727,12 @@ function renderAll(){
 }
 
 /* ============ SHARED ROW -> EMPLOYEE MAPPER ============ */
-function colLetterToIndex(letter){
-  let n = 0;
-  for (let i=0;i<letter.length;i++) n = n*26 + (letter.charCodeAt(i) - 64);
-  return n - 1; // zero-based
-}
-// Resolve a column by its known letter position; fall back to a keyword match in the
-// header text if that letter's header looks empty (e.g. sheet layout shifted).
-function resolveCol(header, letter, keywords){
-  const li = colLetterToIndex(letter);
-  if (li < header.length && (header[li]||'').toString().trim()) return li;
+// Resolve a column purely by keyword match against the actual header row text.
+// Column letters have repeatedly not matched the real sheet layout, so we no longer
+// trust a fixed letter position — a header-text match or nothing at all.
+function resolveCol(header, keywords){
   for (let i=0;i<header.length;i++){
-    const h = (header[i]||'').toString().toLowerCase();
+    const h = (header[i]||'').toString().toLowerCase().trim();
     if (keywords.some(k=>h.includes(k))) return i;
   }
   return -1;
@@ -753,10 +747,9 @@ function rowsToEmployees(header, rows){
   const missing = required.filter(c=>!(c in idx));
   if (missing.length) throw new Error('Missing expected column(s): '+missing.join(', '));
 
-  // Column S = Promoted Designation, Column U = Existing Designation, Column V = Increment Eligibility.
-  const colPromotedDesig = resolveCol(header, 'S', ['promoted designation','promoted']);
-  const colExistingDesig = resolveCol(header, 'U', ['existing designation','existing']);
-  const colEligible = resolveCol(header, 'V', ['eligib']);
+  const colPromotedDesig = resolveCol(header, ['promoted designation','promotion designation','new designation','promoted']);
+  const colExistingDesig = resolveCol(header, ['existing designation','existing desig','old designation','current designation']);
+  const colEligible = resolveCol(header, ['eligib']);
 
   const out = [];
   for (let r = 0; r < rows.length; r++){
@@ -809,6 +802,12 @@ function rowsToEmployees(header, rows){
     });
   }
   if (!out.length) throw new Error('No employee rows found under the header');
+  // If an eligibility column was found but not a single row parsed as eligible, the
+  // values in that column probably aren't the Yes/No text we expect — showing 0% would
+  // be misleading, so fall back to treating everyone as eligible until it's confirmed.
+  if (colEligible >= 0 && !out.some(e=>e.eligible)) {
+    out.forEach(e=>{ e.eligible = true; });
+  }
   return out;
 }
 
