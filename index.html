@@ -285,7 +285,7 @@
       <div class="table-scroll" style="max-height:560px;overflow-x:auto;">
       <table id="empTable">
         <thead><tr>
-          <th>Name</th><th>Department</th><th>Designation</th><th>Current CTC</th><th>Recommended CTC</th><th>Incr %</th><th>Tier</th><th></th>
+          <th>Name</th><th>Department</th><th>Designation</th><th title="Total experience / Experience in Mangalam">Experience</th><th>Current CTC</th><th>Recommended CTC</th><th>Incr %</th><th>Tier</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -687,6 +687,7 @@ function renderTable(){
       <td><b>${e.name}</b> <span class="mono" style="color:#999;font-size:11px;">${e.id}</span> ${e.promo?'<span class="promo-badge">Promoted</span>':''}</td>
       <td>${e.dept}</td>
       <td>${e.promo && e.existingDesig && e.promotedDesig ? `${e.existingDesig} <span class="desig-arrow">→ ${e.promotedDesig}</span>` : e.desig}${e.grade?`<span class="grade-pill">${e.grade}</span>`:''}</td>
+      <td class="mono" style="font-size:12px;white-space:nowrap;" title="Total experience / Experience in Mangalam">${e.totalExp ? e.totalExp+' / ' : ''}${e.tenure} yrs</td>
       <td class="mono">${fmtINR(e.current)}</td>
       <td class="mono">${fmtINR(e.reco)}</td>
       <td class="mono">${e.incrPct}%</td>
