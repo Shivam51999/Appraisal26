@@ -61,7 +61,8 @@
   .toggle-opt{border:none;background:none;padding:5px 13px;border-radius:16px;font-size:11.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:'DM Sans',sans-serif;}
   .toggle-opt.active{background:var(--maroon);color:#fff;}
   .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;}
-  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:0 6px 18px rgba(122,22,32,.08);border-top:3px solid var(--maroon);}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:0 6px 18px rgba(122,22,32,.08);border-top:3px solid var(--maroon);cursor:pointer;transition:transform .15s ease, box-shadow .15s ease;}
+  .kpi:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(122,22,32,.14);}
   .kpi .lbl2{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:600;margin-bottom:8px;}
   .kpi .val{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:600;color:var(--maroon);}
   .kpi .ctx{font-size:11px;color:var(--ink-soft);margin-top:4px;}
@@ -260,7 +261,7 @@
     <div class="insights" id="insightGrid"></div>
   </section>
 
-  <section>
+  <section id="employeeDirectorySection">
     <div class="section-head"><h2>Employee Directory</h2><span class="note">Search any employee — tap a row for full detail</span></div>
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Search by name, employee ID, designation or department…">
@@ -270,11 +271,13 @@
       <select id="flagFilter">
         <option value="">All Employees</option>
         <option value="promo">Promoted</option>
+        <option value="reviewFlags">Flagged for Review</option>
         <option value="salcorr">Salary Correction Flag</option>
         <option value="selfask">Self-Ask Flag</option>
         <option value="hod">HOD Flag</option>
         <option value="nodata">Data Insufficient</option>
         <option value="risk">Predicted Flight Risk</option>
+        <option value="eligible">Eligible for Increment</option>
       </select>
     </div>
     <div class="result-count" id="resultCount"></div>
@@ -433,16 +436,18 @@ function renderKPIs(){
   const incrCtx = useElig
     ? `${o.eligibleCount} of ${o.totalEmployees} eligible · ${fmtINRShort(incrAmt)} added to payroll`
     : fmtINRShort(incrAmt)+' added to payroll';
+  const totalVal = useElig ? o.eligibleCount : o.totalEmployees;
+  const totalCtx = useElig ? `of ${o.totalEmployees} total · ${o.departments} departments` : `${o.departments} departments`;
   const kpis = [
-    {lbl:'Total Employees', val:o.totalEmployees, ctx:`${o.departments} departments`},
-    {lbl:'Current CTC (Total)', val:fmtINRShort(o.totalCurrent), ctx:'Annualized, org-wide'},
-    {lbl:'Recommended CTC (Total)', val:fmtINRShort(o.totalReco), ctx:'Post-appraisal', accent:true},
-    {lbl:'Overall Increment'+(useElig?' (Eligible)':''), val:incrPct+'%', ctx:incrCtx, accent:true},
-    {lbl:'Promotions', val:o.promotions, ctx:(Math.round(o.promotions/o.totalEmployees*1000)/10)+'% of headcount'},
-    {lbl:'Flagged for Review', val:o.salaryCorrectionFlagged + o.selfAskFlagged, ctx:o.dataInsufficient+' missing KRA/360 data', warn:true},
+    {lbl:'Total Employees', val:totalVal, ctx:totalCtx, action: useElig ? 'eligible' : ''},
+    {lbl:'Current CTC (Total)', val:fmtINRShort(o.totalCurrent), ctx:'Annualized, org-wide', action:''},
+    {lbl:'Recommended CTC (Total)', val:fmtINRShort(o.totalReco), ctx:'Post-appraisal', accent:true, action:''},
+    {lbl:'Overall Increment'+(useElig?' (Eligible)':''), val:incrPct+'%', ctx:incrCtx, accent:true, action: useElig ? 'eligible' : ''},
+    {lbl:'Promotions', val:o.promotions, ctx:(Math.round(o.promotions/o.totalEmployees*1000)/10)+'% of headcount', action:'promo'},
+    {lbl:'Flagged for Review', val:o.salaryCorrectionFlagged + o.selfAskFlagged, ctx:o.dataInsufficient+' missing KRA/360 data', warn:true, action:'reviewFlags'},
   ];
   document.getElementById('kpiStrip').innerHTML = kpis.map(k=>`
-    <div class="kpi ${k.accent?'accent':''} ${k.warn?'warn':''}">
+    <div class="kpi ${k.accent?'accent':''} ${k.warn?'warn':''}" onclick="applyKpiFilter('${k.action}')" title="View in Employee Directory">
       <div class="lbl2">${k.lbl}</div>
       <div class="val">${k.val}</div>
       <div class="ctx">${k.ctx}</div>
@@ -467,7 +472,16 @@ function renderCharts(){
     },
     options:{
       responsive:true,
-      plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:11,family:'DM Sans'}}}},
+      plugins:{
+        legend:{position:'bottom', labels:{boxWidth:10, font:{size:11,family:'DM Sans'}}},
+        tooltip:{callbacks:{label:function(ctx){
+          const val = ctx.parsed.y;
+          const isReco = ctx.dataset.label === 'Recommended CTC';
+          const orgTotal = isReco ? DATA.overall.totalReco : DATA.overall.totalCurrent;
+          const pct = orgTotal ? (val/orgTotal*100).toFixed(1) : '0.0';
+          return `${ctx.dataset.label}: ${fmtINRShort(val)} (${pct}% of org total)`;
+        }}}
+      },
       scales:{
         x:{ticks:{font:{size:10,family:'DM Sans'}}},
         y:{ticks:{callback:v=>fmtINRShort(v), font:{size:10,family:'DM Sans'}}, grid:{color:'#EFE4CB'}}
@@ -643,6 +657,8 @@ function matchesFlag(e, flag){
   if (flag==='hod') return !!e.hodFlag;
   if (flag==='nodata') return e.dataSuff !== 'Yes';
   if (flag==='risk') return DATA.risk.some(r=>r.name===e.name && r.id===e.id);
+  if (flag==='reviewFlags') return !!(e.salCorrFlag || e.selfAskFlag);
+  if (flag==='eligible') return e.eligible !== false;
   return true;
 }
 
@@ -702,6 +718,9 @@ function openDrawer(e){
     ${e.existingDesig ? `<div class="row"><span>Existing Designation</span><span>${e.existingDesig}</span></div>` : ''}
     ${e.promotedDesig ? `<div class="row"><span>Promoted Designation</span><span>${e.promotedDesig}</span></div>` : ''}
     ${e.grade ? `<div class="row"><span>Grade</span><span>${e.grade}</span></div>` : ''}
+    ${e.totalExp ? `<div class="row"><span>Total Experience</span><span>${e.totalExp}</span></div>` : ''}
+    <div class="row"><span>Experience in Mangalam</span><span>${e.tenure} yrs</span></div>
+    ${e.education ? `<div class="row"><span>Education Qualification</span><span>${e.education}</span></div>` : ''}
     <div class="row"><span>Current CTC</span><span>${fmtINR(e.current)}</span></div>
     <div class="row"><span>Recommended CTC</span><span>${fmtINR(e.reco)}</span></div>
     <div class="row"><span>Increment</span><span>${fmtINR(e.incrAmt)} (${e.incrPct}%)</span></div>
@@ -750,6 +769,8 @@ function rowsToEmployees(header, rows){
   const colPromotedDesig = resolveCol(header, ['promoted designation','promotion designation','new designation','promoted']);
   const colExistingDesig = resolveCol(header, ['existing designation','existing desig','old designation','current designation']);
   const colEligible = resolveCol(header, ['eligib']);
+  const colTotalExp = resolveCol(header, ['total experience','total exp','overall experience']);
+  const colEducation = resolveCol(header, ['education','qualification']);
 
   const out = [];
   for (let r = 0; r < rows.length; r++){
@@ -774,6 +795,8 @@ function rowsToEmployees(header, rows){
     const existingDesigVal = colExistingDesig>=0 ? row[colExistingDesig] : '';
     const promotedDesigVal = colPromotedDesig>=0 ? row[colPromotedDesig] : '';
     const gradeVal = ('Grade' in idx) ? row[idx['Grade']] : '';
+    const totalExpVal = colTotalExp>=0 ? row[colTotalExp] : '';
+    const educationVal = colEducation>=0 ? row[colEducation] : '';
     // No eligibility column found at all -> treat everyone as eligible (data not migrated yet).
     // Column found -> explicit value decides; blank/unrecognized counts as not eligible.
     const eligibleVal = colEligible < 0 ? true : ELIGIBLE_YES.includes((row[colEligible]||'').toString().trim().toLowerCase());
@@ -787,6 +810,8 @@ function rowsToEmployees(header, rows){
       existingDesig: existingDesigVal ? (''+existingDesigVal).trim() : '',
       promotedDesig: promotedDesigVal ? (''+promotedDesigVal).trim() : '',
       grade: gradeVal ? (''+gradeVal).trim() : '',
+      totalExp: totalExpVal ? (''+totalExpVal).trim() : '',
+      education: educationVal ? (''+educationVal).trim() : '',
       eligible: eligibleVal,
       tenure: tenureVal,
       current: Math.round(current),
@@ -928,6 +953,17 @@ document.getElementById('fileInput').addEventListener('change', function(evt){
 });
 
 /* ============ INIT ============ */
+function applyKpiFilter(action){
+  document.getElementById('searchInput').value = '';
+  document.getElementById('deptFilter').value = '';
+  document.getElementById('tierFilter').value = '';
+  document.getElementById('gradeFilter').value = '';
+  document.getElementById('flagFilter').value = action || '';
+  renderTable();
+  const sec = document.getElementById('employeeDirectorySection');
+  if (sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 document.querySelectorAll('#eligibleToggle .toggle-opt').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     incrementScope = btn.dataset.mode;
