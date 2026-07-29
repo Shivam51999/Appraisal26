@@ -208,7 +208,7 @@
     <div class="section-head"><h2>Cost of Appraisal</h2><span class="note">Current vs. recommended, org-wide</span></div>
     <div class="grid-2">
       <div class="card">
-        <h3>Current CTC vs Recommended CTC — by Department</h3>
+        <h3>Current CTC vs Recommended CTC — by Department <span id="ctcScopeTag" class="mono" style="text-transform:none;letter-spacing:0;color:var(--ink-soft);font-weight:500;"></span></h3>
         <canvas id="deptCtcChart" height="260"></canvas>
       </div>
       <div class="card">
@@ -376,7 +376,7 @@ function computeAll(employees){
     Department:g.Department, employees:g.employees, current:g.current, reco:g.reco, promotions:g.promotions,
     incrPct: g.current ? Math.round((g.reco-g.current)/g.current*10000)/100 : 0,
     avgIncrPct: Math.round((g.incrList.reduce((a,b)=>a+b,0)/g.incrList.length)*100)/100,
-    eligCount:g.eligCount,
+    eligCount:g.eligCount, eligCurrent:g.eligCurrent, eligReco:g.eligReco,
     incrPctEligible: g.eligCurrent ? Math.round((g.eligReco-g.eligCurrent)/g.eligCurrent*10000)/100 : 0,
   }));
 
@@ -468,14 +468,18 @@ function renderCharts(){
   if(incrChart) incrChart.destroy();
   if(projChart) projChart.destroy();
 
-  const depts = [...DATA.departments].sort((a,b)=>b.current-a.current);
+  const useEligCtc = incrementScope === 'eligible';
+  document.getElementById('ctcScopeTag').textContent = useEligCtc ? '(Eligible only)' : '';
+  const ctcCurrentOf = d => useEligCtc ? d.eligCurrent : d.current;
+  const ctcRecoOf = d => useEligCtc ? d.eligReco : d.reco;
+  const depts = [...DATA.departments].sort((a,b)=>ctcCurrentOf(b)-ctcCurrentOf(a));
   deptChart = new Chart(document.getElementById('deptCtcChart'), {
     type:'bar',
     data:{
       labels: depts.map(d=>d.Department),
       datasets:[
-        {label:'Current CTC', data:depts.map(d=>d.current), backgroundColor:'#D9BD84', borderRadius:3},
-        {label:'Recommended CTC', data:depts.map(d=>d.reco), backgroundColor:'#7A1620', borderRadius:3},
+        {label:'Current CTC', data:depts.map(d=>ctcCurrentOf(d)), backgroundColor:'#D9BD84', borderRadius:3},
+        {label:'Recommended CTC', data:depts.map(d=>ctcRecoOf(d)), backgroundColor:'#7A1620', borderRadius:3},
       ]
     },
     options:{
@@ -485,9 +489,11 @@ function renderCharts(){
         tooltip:{callbacks:{label:function(ctx){
           const val = ctx.parsed.y;
           const isReco = ctx.dataset.label === 'Recommended CTC';
-          const orgTotal = isReco ? DATA.overall.totalReco : DATA.overall.totalCurrent;
+          const orgTotal = isReco
+            ? (useEligCtc ? DATA.overall.eligibleReco : DATA.overall.totalReco)
+            : (useEligCtc ? DATA.overall.eligibleCurrent : DATA.overall.totalCurrent);
           const pct = orgTotal ? (val/orgTotal*100).toFixed(1) : '0.0';
-          return `${ctx.dataset.label}: ${fmtINRShort(val)} (${pct}% of org total)`;
+          return `${ctx.dataset.label}: ${fmtINRShort(val)} (${pct}% of ${useEligCtc?'eligible':'org'} total)`;
         }}}
       },
       scales:{
