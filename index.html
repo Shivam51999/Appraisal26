@@ -443,10 +443,13 @@ function renderKPIs(){
     : fmtINRShort(incrAmt)+' added to payroll';
   const totalVal = useElig ? o.eligibleCount : o.totalEmployees;
   const totalCtx = useElig ? `of ${o.totalEmployees} total · ${o.departments} departments` : `${o.departments} departments`;
+  const currentCtcVal = useElig ? o.eligibleCurrent : o.totalCurrent;
+  const recoCtcVal = useElig ? o.eligibleReco : o.totalReco;
+  const ctcCtx = useElig ? `Eligible employees only (${o.eligibleCount} of ${o.totalEmployees})` : 'Annualized, org-wide';
   const kpis = [
     {lbl:'Total Employees', val:totalVal, ctx:totalCtx, action: useElig ? 'eligible' : ''},
-    {lbl:'Current CTC (Total)', val:fmtINRShort(o.totalCurrent), ctx:'Annualized, org-wide', action:''},
-    {lbl:'Recommended CTC (Total)', val:fmtINRShort(o.totalReco), ctx:'Post-appraisal', accent:true, action:''},
+    {lbl:'Current CTC (Total)'+(useElig?' (Eligible)':''), val:fmtINRShort(currentCtcVal), ctx:ctcCtx, action: useElig ? 'eligible' : ''},
+    {lbl:'Recommended CTC (Total)'+(useElig?' (Eligible)':''), val:fmtINRShort(recoCtcVal), ctx:useElig?ctcCtx:'Post-appraisal', accent:true, action: useElig ? 'eligible' : ''},
     {lbl:'Overall Increment'+(useElig?' (Eligible)':''), val:incrPct+'%', ctx:incrCtx, accent:true, action: useElig ? 'eligible' : ''},
     {lbl:'Promotions', val:o.promotions, ctx:(Math.round(o.promotions/o.totalEmployees*1000)/10)+'% of headcount', action:'promo'},
     {lbl:'Flagged for Review', val:o.salaryCorrectionFlagged + o.selfAskFlagged, ctx:o.dataInsufficient+' missing KRA/360 data', warn:true, action:'reviewFlags'},
